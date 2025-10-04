@@ -84,6 +84,24 @@ OUT/20251004/
 _live.html            # 最新ページ HTML
 ```
 
+### 出力先ディレクトリの決定ルール
+
+優先順位:
+
+1. 環境変数 `D_ANIME_SCRAPER_OUT_DIR` が設定されていればそのパス
+2. PyInstaller onefile 版: 実行した exe があるフォルダ直下
+3. ソース実行: プロジェクトルート直下
+
+その下に `OUT/<YYYYMMDD>/` が生成されます。CLI で `--out-dir /path/to/base` を指定すれば (1) と同様に上書き可能です。
+
+例:
+
+```bash
+d-anime-scraper --out-dir "D:/data/danime"
+```
+
+→ `D:/data/danime/OUT/20251004/anime_list.csv` などが生成。
+
 CSV カラム: `曜日, 放送開始日, タイトル, 画像URL, 画像ファイル名`
 
 ---

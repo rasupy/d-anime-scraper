@@ -295,7 +295,23 @@ def run_scrape(dynamic: bool = False) -> ScrapeResult:
             _log(f"dynamic fetch failed: {e}", logging.WARNING)
 
     today = dt.datetime.now().strftime("%Y%m%d")
-    base_out = Path(__file__).resolve().parent.parent / OUT_DIR_NAME / today
+
+    def _determine_base_dir() -> Path:
+        # 1) 明示指定 (環境変数) 優先
+        env = os.environ.get("D_ANIME_SCRAPER_OUT_DIR")
+        if env:
+            try:
+                return Path(env).expanduser().resolve()
+            except Exception:
+                pass  # フォールバック
+        # 2) PyInstaller onefile 実行時: 展開先(_MEIPASS)ではなく exe 位置を基準にする
+        if getattr(sys, "frozen", False) and hasattr(sys, "executable"):
+            return Path(sys.executable).resolve().parent
+        # 3) 通常: プロジェクトルート (scraper.py の 2 つ上: repo ルート想定)
+        return Path(__file__).resolve().parent.parent
+
+    base_root = _determine_base_dir()
+    base_out = base_root / OUT_DIR_NAME / today
     images_dir = base_out / "images"
     csv_path = base_out / "anime_list.csv"
     saved = download_images(entries, images_dir)
@@ -341,6 +357,10 @@ def _cli():
         help="静的取得が 0 件だった場合に Playwright で動的 DOM を再取得する",
     )
     parser.add_argument(
+        "--out-dir",
+        help="OUT フォルダの親ディレクトリを明示指定 (未指定時: exe 位置 or プロジェクトルート)",
+    )
+    parser.add_argument(
         "--version",
         action="store_true",
         help="バージョンを表示して終了",
@@ -352,6 +372,8 @@ def _cli():
         if args.version:
             print(__version__)
             return
+        if args.out_dir:
+            os.environ["D_ANIME_SCRAPER_OUT_DIR"] = args.out_dir
         result = run_scrape(dynamic=args.dynamic)
         print(
             f"CSV 出力: {result.csv_path} (件数: {len(result.entries)} | used_local={result.used_local})"

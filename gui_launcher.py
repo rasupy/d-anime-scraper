@@ -66,6 +66,7 @@ def main():
             win.log(
                 f"[INFO] 完了 CSV: {result.csv_path} 件数={len(result.entries)} local={result.used_local}"
             )
+            win.log(f"[INFO] 出力ルート: {result.csv_path.parent.parent}")
             # _status.txt から画像保存数を読む
             try:
                 status_file = result.csv_path.parent / "_status.txt"
