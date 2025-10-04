@@ -9,6 +9,7 @@ Enhancements in 0.6.0:
 
 from __future__ import annotations
 
+import contextlib
 import csv
 import datetime as dt
 import logging
@@ -18,7 +19,7 @@ import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, List, Optional
+from collections.abc import Iterable
 
 import requests
 from .version import __version__
@@ -56,11 +57,11 @@ class AnimeEntry:
 @dataclass
 class ScrapeResult:
     csv_path: Path
-    entries: List[AnimeEntry]
+    entries: list[AnimeEntry]
     used_local: bool
     used_dynamic: bool
     run_log_path: Path
-    logs: List[str]
+    logs: list[str]
     structure_warning: str | None = None
 
 
@@ -92,13 +93,13 @@ def fetch_live_html(timeout: float = 15.0) -> tuple[str | None, str | None]:
         return None, str(e)
 
 
-def parse_entries(html: str) -> List[AnimeEntry]:
+def parse_entries(html: str) -> list[AnimeEntry]:
     soup = BeautifulSoup(html, "lxml")
     container = soup.select_one("#newContents")
     if not container:
         raise RuntimeError("新作コンテンツ領域(#newContents)が見つかりません")
 
-    entries: List[AnimeEntry] = []
+    entries: list[AnimeEntry] = []
     week_wrappers = container.select("div.weekWrapper")
     for ww in week_wrappers:
         week_text_el = ww.select_one(".weekText")
@@ -123,7 +124,7 @@ def parse_entries(html: str) -> List[AnimeEntry]:
             start_date = start_el.get_text(strip=True) if start_el else ""
             title_el = module.select_one("p.newTVtitle span")
             title = title_el.get_text(strip=True) if title_el else ""
-            img_el: Optional[Tag] = module.select_one(".thumbnailArea img")
+            img_el: Tag | None = module.select_one(".thumbnailArea img")
             variants: list[str] = []
             image_url = ""
             if img_el:
@@ -203,9 +204,9 @@ def download_images(
     return saved
 
 
-def write_csv(entries: List[AnimeEntry], csv_path: Path) -> None:
+def write_csv(entries: list[AnimeEntry], csv_path: Path) -> None:
     csv_path.parent.mkdir(parents=True, exist_ok=True)
-    by_day: dict[str, List[AnimeEntry]] = {}
+    by_day: dict[str, list[AnimeEntry]] = {}
     for e in entries:
         by_day.setdefault(e.weekday, []).append(e)
     order = ["月曜", "火曜", "水曜", "木曜", "金曜", "土曜", "日曜"]
@@ -244,7 +245,7 @@ async def _fetch_dynamic_html(timeout_sec: int = 15) -> str:
 def run_scrape(dynamic: bool = False) -> ScrapeResult:
     used_local = False
     used_dynamic = False
-    logs: List[str] = []
+    logs: list[str] = []
     structure_warning: str | None = None
 
     def _log(msg: str, level: int = logging.INFO):
@@ -257,16 +258,14 @@ def run_scrape(dynamic: bool = False) -> ScrapeResult:
     live_html, live_err = fetch_live_html()
     if live_html:
         _log(f"live fetch ok size={len(live_html)}")
-        try:
+        with contextlib.suppress(Exception):
             LIVE_HTML.write_text(live_html, encoding="utf-8")
-        except Exception:
-            pass
         parse_html = live_html
     else:
         _log(f"live fetch failed: {live_err}", logging.ERROR)
         raise LoginRequiredError(f"ライブページ取得失敗: {live_err}")
 
-    entries: List[AnimeEntry] = parse_entries(parse_html)
+    entries: list[AnimeEntry] = parse_entries(parse_html)
     _log(f"parsed entries={len(entries)} (static)")
 
     if not entries:
@@ -290,10 +289,8 @@ def run_scrape(dynamic: bool = False) -> ScrapeResult:
             if dyn_entries:
                 entries = dyn_entries
                 used_dynamic = True
-                try:
+                with contextlib.suppress(Exception):
                     LIVE_HTML.write_text(dyn_html, encoding="utf-8")
-                except Exception:
-                    pass
         except Exception as e:
             _log(f"dynamic fetch failed: {e}", logging.WARNING)
 
@@ -319,10 +316,8 @@ def run_scrape(dynamic: bool = False) -> ScrapeResult:
         status_lines.append(f"structure_warning={structure_warning}")
     status_path.write_text(" ".join(status_lines) + "\n", encoding="utf-8")
     run_log_path = base_out / "run.log"
-    try:
+    with contextlib.suppress(Exception):
         run_log_path.write_text("\n".join(logs) + "\n", encoding="utf-8-sig")
-    except Exception:
-        pass
     return ScrapeResult(
         csv_path=csv_path,
         entries=entries,
