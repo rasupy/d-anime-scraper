@@ -46,8 +46,11 @@ jobs:
 
       - name: Build (PyInstaller)
         run: |
-          # version.py はパッケージ内 (d_anime_scraper/version.py) に移動済みのため add-data 不要
-          pyinstaller --onefile --noconsole gui_launcher.py -n d_anime_scraper
+          # spec ファイルを利用 (UPX 無効化済み)
+          pyinstaller -y d_anime_scraper.spec
+          echo "SHA256 (Linux/Windows build if both present):"
+          if [ -f dist/d_anime_scraper ]; then sha256sum dist/d_anime_scraper; fi
+          if [ -f dist/d_anime_scraper.exe ]; then sha256sum dist/d_anime_scraper.exe; fi
 
       - name: Archive binary artifact
         uses: actions/upload-artifact@v4
@@ -70,6 +73,8 @@ jobs:
           mkdir upload
           cp dist_all/d_anime_scraper-Windows/d_anime_scraper.exe upload/ || true
           cp dist_all/d_anime_scraper-Linux/d_anime_scraper upload/ || true
+          # ハッシュファイル生成
+          (cd upload && for f in *; do [ -f "$f" ] && sha256sum "$f" > "$f.sha256"; done)
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:

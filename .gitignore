@@ -16,7 +16,6 @@ out/
 ## ビルド生成物 / 配布バイナリ
 dist/
 build/
-*.spec
 
 ## 一時保存HTML
 _live.html
