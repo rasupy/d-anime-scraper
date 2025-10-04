@@ -16,17 +16,18 @@ import logging
 import os
 import re
 import sys
+from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
-from collections.abc import Iterable
 
 import requests
+
 from .version import __version__
 
-try:
+try:  # Third-party optional
     from bs4 import BeautifulSoup, Tag  # type: ignore
-except Exception as e:  # pragma: no cover
+except Exception:  # pragma: no cover
     print(
         "[ERROR] beautifulsoup4 がインストールされていません。'pip install beautifulsoup4 lxml' を実行してください.",
         file=sys.stderr,
@@ -233,10 +234,9 @@ async def _fetch_dynamic_html(timeout_sec: int = 15) -> str:
         browser = await p.chromium.launch(headless=True)
         page = await browser.new_page()
         await page.goto(FALL_PAGE_URL, timeout=timeout_sec * 1000)
-        try:
+        # 多少時間が掛かる可能性があるため待機。失敗は致命ではないので握りつぶす。
+        with contextlib.suppress(Exception):
             await page.wait_for_selector("div.itemModule.list", timeout=8000)
-        except Exception:
-            pass
         html = await page.content()
         await browser.close()
         return html
@@ -333,7 +333,7 @@ def _cli():
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="dアニメ 今期アニメリスト スクレイパー (version %s)" % __version__
+        description=f"dアニメ 今期アニメリスト スクレイパー (version {__version__})"
     )
     parser.add_argument(
         "--dynamic",

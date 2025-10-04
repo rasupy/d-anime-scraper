@@ -6,5 +6,5 @@ Public API exports:
 - __version__ (single source from version.py) (PEP 621 mirrors project.version)
 """
 
+from .scraper import LoginRequiredError, ScrapeResult, run_scrape  # noqa: F401
 from .version import __version__  # noqa: F401
-from .scraper import run_scrape, ScrapeResult, LoginRequiredError  # noqa: F401

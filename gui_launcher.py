@@ -7,16 +7,16 @@ PyInstaller で exe 化を想定。--noconsole でもログを見える化する
 
 from __future__ import annotations
 
+import os
 import queue
+import subprocess
+import sys
 import threading
 import time
 import tkinter as tk
 from tkinter import messagebox
-import os
-import sys
-import subprocess
 
-from d_anime_scraper.scraper import LoginRequiredError, run_scrape, ScrapeResult
+from d_anime_scraper.scraper import LoginRequiredError, ScrapeResult, run_scrape
 from d_anime_scraper.version import __version__
 
 

@@ -49,6 +49,12 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 100
 
+[tool.ruff.lint]
+# 追加で明示したいルールセットがあればここに select/ignore を配置可能
+# 現時点ではデフォルト + import order, pyupgrade など Ruff の標準を利用
+select = ["E", "F", "I", "UP", "SIM"]
+ignore = []
+
 [tool.mypy]
 python_version = "3.12"
 warn_unreachable = true
