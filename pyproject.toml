@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "d-anime-scraper"
-version = "0.6.0"  # Single-source in d_anime_scraper/version.py (keep in sync manually or add automation)
+version = "0.6.1"  # Single-source in d_anime_scraper/version.py (keep in sync manually or add automation)
 description = "dアニメストア 今期アニメ一覧 スクレイピングツール"
 readme = "README.md"
 authors = [
