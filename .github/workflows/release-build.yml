@@ -45,6 +45,7 @@ jobs:
           pytest -q || (echo "Tests failed" && exit 1)
 
       - name: Build (PyInstaller)
+        shell: bash
         run: |
           # spec ファイルを利用 (UPX 無効化済み)
           pyinstaller -y d_anime_scraper.spec

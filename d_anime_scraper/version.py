@@ -4,4 +4,4 @@ Update this file when bumping version. CI / packaging / runtime all import from 
 """
 
 __all__ = ["__version__"]
-__version__ = "0.6.4"
+__version__ = "0.6.5"
