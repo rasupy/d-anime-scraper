@@ -49,6 +49,11 @@ jobs:
         run: |
           # spec ファイルを利用 (UPX 無効化済み)
           pyinstaller -y d_anime_scraper.spec
+          # Windows 向けに one-dir 形式も (heuristic 誤検知低減目的)
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            pyinstaller --noconsole gui_launcher.py -n d_anime_scraper_dir --clean --noupx
+            (cd dist && tar -czf d_anime_scraper_dir.tar.gz d_anime_scraper_dir)
+          fi
           echo "SHA256 (Linux/Windows build if both present):"
           if [ -f dist/d_anime_scraper ]; then sha256sum dist/d_anime_scraper; fi
           if [ -f dist/d_anime_scraper.exe ]; then sha256sum dist/d_anime_scraper.exe; fi
@@ -74,6 +79,7 @@ jobs:
           mkdir upload
           cp dist_all/d_anime_scraper-Windows/d_anime_scraper.exe upload/ || true
           cp dist_all/d_anime_scraper-Linux/d_anime_scraper upload/ || true
+          cp dist_all/d_anime_scraper-Windows/d_anime_scraper_dir.tar.gz upload/ || true
           # ハッシュファイル生成
           (cd upload && for f in *; do [ -f "$f" ] && sha256sum "$f" > "$f.sha256"; done)
       - name: Create Release
@@ -82,5 +88,6 @@ jobs:
           files: |
             upload/d_anime_scraper.exe
             upload/d_anime_scraper
+            upload/d_anime_scraper_dir.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
