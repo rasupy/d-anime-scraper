@@ -254,7 +254,33 @@ def run_scrape(dynamic: bool = False) -> ScrapeResult:
         logs.append(line)
         LOGGER.log(level, msg)
 
-    _log(f"run_scrape start mode={'dynamic' if dynamic else 'static'}")
+    # ------------------------------------------------------------
+    # 出力先 (base_out) を先に決めて生成しておく
+    #   - 失敗時でも _error.txt や部分 HTML を残せるようにする
+    # ------------------------------------------------------------
+    today = dt.datetime.now().strftime("%Y%m%d")
+
+    def _determine_base_dir() -> Path:
+        env = os.environ.get("D_ANIME_SCRAPER_OUT_DIR")
+        if env:
+            with contextlib.suppress(Exception):
+                return Path(env).expanduser().resolve()
+        if getattr(sys, "frozen", False) and hasattr(sys, "executable"):
+            return Path(sys.executable).resolve().parent
+        return Path(__file__).resolve().parent.parent
+
+    base_root = _determine_base_dir()
+    base_out = base_root / OUT_DIR_NAME / today
+    with contextlib.suppress(Exception):
+        base_out.mkdir(parents=True, exist_ok=True)
+
+    def _write_debug(name: str, content: str):
+        with contextlib.suppress(Exception):
+            (base_out / name).write_text(content, encoding="utf-8", errors="ignore")
+
+    _log(
+        f"run_scrape start mode={'dynamic' if dynamic else 'static'} base_out={base_out}"
+    )
     live_html, live_err = fetch_live_html()
     if live_html:
         _log(f"live fetch ok size={len(live_html)}")
@@ -263,9 +289,16 @@ def run_scrape(dynamic: bool = False) -> ScrapeResult:
         parse_html = live_html
     else:
         _log(f"live fetch failed: {live_err}", logging.ERROR)
+        _write_debug("_error.txt", f"fetch_failed: {live_err}\n")
         raise LoginRequiredError(f"ライブページ取得失敗: {live_err}")
 
-    entries: list[AnimeEntry] = parse_entries(parse_html)
+    try:
+        entries: list[AnimeEntry] = parse_entries(parse_html)
+    except Exception as e:  # 解析失敗時は先頭数千文字を保存
+        _log(f"parse failed: {e}", logging.ERROR)
+        _write_debug("_parse_failed.html", parse_html[:5000])
+        _write_debug("_error.txt", f"parse_error: {e}\n")
+        raise
     _log(f"parsed entries={len(entries)} (static)")
 
     if not entries:
@@ -294,24 +327,7 @@ def run_scrape(dynamic: bool = False) -> ScrapeResult:
         except Exception as e:
             _log(f"dynamic fetch failed: {e}", logging.WARNING)
 
-    today = dt.datetime.now().strftime("%Y%m%d")
-
-    def _determine_base_dir() -> Path:
-        # 1) 明示指定 (環境変数) 優先
-        env = os.environ.get("D_ANIME_SCRAPER_OUT_DIR")
-        if env:
-            try:
-                return Path(env).expanduser().resolve()
-            except Exception:
-                pass  # フォールバック
-        # 2) PyInstaller onefile 実行時: 展開先(_MEIPASS)ではなく exe 位置を基準にする
-        if getattr(sys, "frozen", False) and hasattr(sys, "executable"):
-            return Path(sys.executable).resolve().parent
-        # 3) 通常: プロジェクトルート (scraper.py の 2 つ上: repo ルート想定)
-        return Path(__file__).resolve().parent.parent
-
-    base_root = _determine_base_dir()
-    base_out = base_root / OUT_DIR_NAME / today
+    # base_out は冒頭で決定済み
     images_dir = base_out / "images"
     csv_path = base_out / "anime_list.csv"
     saved = download_images(entries, images_dir)
