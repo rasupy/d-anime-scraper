@@ -49,11 +49,25 @@ jobs:
         run: |
           # spec ファイルを利用 (UPX 無効化済み)
           pyinstaller -y d_anime_scraper.spec
-          # Windows 向けに one-dir 形式も (heuristic 誤検知低減目的)
+          # Windows 向けに one-dir 形式 (フォルダ配布) も作成 (heuristic 誤検知低減)
           if [[ "$RUNNER_OS" == "Windows" ]]; then
-            pyinstaller --noconsole gui_launcher.py -n d_anime_scraper_dir --clean --noupx
-            (cd dist && tar -czf d_anime_scraper_dir.tar.gz d_anime_scraper_dir)
+            pyinstaller --noconsole gui_launcher.py -n d_anime_scraper_folder --clean --noupx
+            printf '%s\n' \
+              'ダウンロード後の利用手順:' \
+              '1. このフォルダ一式を任意の場所へ配置 (例: C:\tools\d_anime_scraper)' \
+              '2. フォルダ内 d_anime_scraper_folder.exe をダブルクリック' \
+              '3. OUT/ 日付フォルダ内に CSV / 画像 が生成されます' \
+              '4. 0 件だった場合は Playwright を導入して再実行:' \
+              '   pip install playwright && playwright install chromium' \
+              '' \
+              '環境変数 D_ANIME_SCRAPER_OUT_DIR で出力先の親を変更可能です。' \
+              > dist/d_anime_scraper_folder/INSTRUCTIONS_ja.txt
           fi
+      - name: Zip onedir (Windows only)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (Test-Path dist/d_anime_scraper_folder) { Compress-Archive -Path dist/d_anime_scraper_folder -DestinationPath dist/d_anime_scraper_folder.zip -Force }
           echo "SHA256 (Linux/Windows build if both present):"
           if [ -f dist/d_anime_scraper ]; then sha256sum dist/d_anime_scraper; fi
           if [ -f dist/d_anime_scraper.exe ]; then sha256sum dist/d_anime_scraper.exe; fi
@@ -79,7 +93,7 @@ jobs:
           mkdir upload
           cp dist_all/d_anime_scraper-Windows/d_anime_scraper.exe upload/ || true
           cp dist_all/d_anime_scraper-Linux/d_anime_scraper upload/ || true
-          cp dist_all/d_anime_scraper-Windows/d_anime_scraper_dir.tar.gz upload/ || true
+          cp dist_all/d_anime_scraper-Windows/d_anime_scraper_folder.zip upload/ || true
           # ハッシュファイル生成
           (cd upload && for f in *; do [ -f "$f" ] && sha256sum "$f" > "$f.sha256"; done)
       - name: Create Release
@@ -88,6 +102,6 @@ jobs:
           files: |
             upload/d_anime_scraper.exe
             upload/d_anime_scraper
-            upload/d_anime_scraper_dir.tar.gz
+            upload/d_anime_scraper_folder.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
