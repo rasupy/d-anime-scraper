@@ -43,11 +43,8 @@ jobs:
 
       - name: Build (PyInstaller)
         run: |
-          if [ "${{ runner.os }}" = "Windows" ]; then \
-            pyinstaller --onefile --noconsole gui_launcher.py -n d_anime_scraper --add-data version.py;. ; \
-          else \
-            pyinstaller --onefile --noconsole gui_launcher.py -n d_anime_scraper --add-data version.py:. ; \
-          fi
+          # version.py はパッケージ内 (d_anime_scraper/version.py) に移動済みのため add-data 不要
+          pyinstaller --onefile --noconsole gui_launcher.py -n d_anime_scraper
 
       - name: Archive binary artifact
         uses: actions/upload-artifact@v4
