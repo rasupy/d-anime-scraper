@@ -8,7 +8,9 @@ if exist build rmdir /s /q build
 if exist __pycache__ rmdir /s /q __pycache__
 
 echo [INFO] PyInstaller build
-pyinstaller --onefile --noconsole %SRC% -n %APP_NAME% --add-data version.py;.
+pyinstaller --onefile --noconsole %SRC% -n %APP_NAME% ^
+	--add-data d_anime_scraper/version.py;d_anime_scraper ^
+	--add-data d_anime_scraper/scraper.py;d_anime_scraper
 
 echo [INFO] Build complete: dist\%APP_NAME%.exe
 echo [HINT] 動的取得を利用するには実行環境で "pip install playwright" し、その後 "playwright install chromium" を実行してください。

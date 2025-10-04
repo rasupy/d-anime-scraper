@@ -12,6 +12,9 @@ import threading
 import time
 import tkinter as tk
 from tkinter import messagebox
+import os
+import sys
+import subprocess
 
 from d_anime_scraper.scraper import LoginRequiredError, run_scrape, ScrapeResult
 from d_anime_scraper.version import __version__
@@ -91,6 +94,14 @@ def main():
                         win.log("[WARN] 動的取得でも 0 件でした")
                 except Exception as e:  # noqa
                     win.log(f"[ERROR] dynamic fetch failed: {e}")
+            # 出力フォルダ自動オープン
+            try:
+                out_dir = result.csv_path.parent
+                if out_dir.exists():
+                    win.log(f"[INFO] 出力フォルダを開きます: {out_dir}")
+                    _open_folder(out_dir)
+            except Exception as e:  # noqa
+                win.log(f"[WARN] フォルダ自動オープン失敗: {e}")
             win.log("[INFO] ウィンドウは数秒後に閉じます...")
             win.close_after(4.0)
         except LoginRequiredError:
@@ -109,3 +120,17 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+def _open_folder(path):  # 定義を末尾に配置して import 時 accidental 実行を避ける
+    """OSごとにフォルダを開く。失敗は例外送出せず握りつぶす。"""
+    try:
+        p = str(path)
+        if sys.platform.startswith("win"):
+            os.startfile(p)  # type: ignore[attr-defined]
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", p])
+        else:
+            subprocess.Popen(["xdg-open", p])
+    except Exception:
+        pass
