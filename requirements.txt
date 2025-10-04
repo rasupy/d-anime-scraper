@@ -1,9 +1,3 @@
 requests>=2.31.0
 beautifulsoup4>=4.12.2   # HTML 解析
-lxml>=4.9.3              # パーサ
-
-# --- 配布軽量化のため必須は上記のみ ---
-# 動的取得を利用したい利用者向け(任意):
-#   pip install playwright
-#   playwright install chromium
-# 旧: tenacity, PySimpleGUI は現行コードでは未使用のため除外
+lxml>=4.9.3              # 高速化のために利用推奨

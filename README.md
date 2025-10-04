@@ -83,6 +83,8 @@ bash build_exe.sh        # Linux / macOS
 build_exe.bat
 ```
 
+開発で `pip install -e .` を使うと `d_anime_scraper.egg-info/` が生成されますが、これはパッケージメタデータでありリポジトリにはコミットしません (`.gitignore` 済)。
+
 生成物: `dist/d_anime_scraper` (Windows: `dist/d_anime_scraper.exe`)
 
 ### バージョン表示

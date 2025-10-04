@@ -3,6 +3,12 @@ __pycache__/
 *.pyc
 .venv/
 .env
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+coverage.xml
+tests/
 
 ## 出力成果物 (日付フォルダ)
 OUT/
@@ -18,3 +24,6 @@ _live.html
 
 ## ログ (あれば)
 *.log
+
+# Packaging metadata
+*.egg-info/

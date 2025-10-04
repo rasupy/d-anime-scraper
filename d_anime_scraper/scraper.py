@@ -1,33 +1,27 @@
-"""dアニメストア 今期(秋)アニメ ラインナップ簡易スクレイパー
+"""Core scraping logic for d-anime current season list.
 
-要件:
-  * 今期放送予定(タブ1)の各曜日ブロックを取得
-  * 取得項目: 曜日, 放送開始日(YYYY年なし・例: 10月6日～), タイトル, 画像URL(src優先/なければdata-src/alt), 画像
-  * OUT/yyyymmdd/ に CSV と images/ 保存
-  * "まだまだ配信中" タブ(タブ2)のリストは除外
-  * 直接アクセス不可(ログイン画面/想定HTML未取得)の場合は例外を上位に伝え GUI 側でポップアップ表示
-
-実装方針(シンプル/可読性重視):
-  - HTTP取得は requests (静的で十分 / JS依存なし)
-  - 失敗/403等 → LoginRequiredError
-  - オフラインフォールバック: temp.html が存在すればパース
-  - HTML構造は weekWrapper > .weekText と直後の .itemWrapper 内の .itemModule を列挙
-  - 画像ファイル名は `序数_スラッグ化タイトル.png` 形式
+Enhancements in 0.6.0:
+ - Switched to standard logging (module logger name: d_anime_scraper.scraper)
+ - Parallel image downloads (ThreadPoolExecutor) with limited concurrency
+ - Structure change detection (warn when zero entries & weekWrapper present / or signature missing)
+ - Package layout (d_anime_scraper.*)
 """
 
 from __future__ import annotations
 
 import csv
 import datetime as dt
+import logging
 import os
 import re
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, List, Optional
 
 import requests
-from version import __version__
+from .version import __version__
 
 try:
     from bs4 import BeautifulSoup, Tag  # type: ignore
@@ -38,6 +32,7 @@ except Exception as e:  # pragma: no cover
     )
     raise
 
+LOGGER = logging.getLogger(__name__)
 
 FALL_PAGE_URL = "https://animestore.docomo.ne.jp/animestore/CF/fall"
 LIVE_HTML = Path(__file__).with_name("_live.html")  # 毎実行時に最新取得HTMLを上書き
@@ -50,22 +45,23 @@ class LoginRequiredError(RuntimeError):
 
 @dataclass
 class AnimeEntry:
-    weekday: str  # 例: 月曜
-    start_date: str  # 例: 10月6日～
+    weekday: str
+    start_date: str
     title: str
-    image_url: str  # 最終的に採用した URL (CSV 出力用)
-    image_filename: str  # 保存したローカルファイル名
-    variants: list[str]  # 試行候補 URL (alt > data-src > src)
+    image_url: str
+    image_filename: str
+    variants: list[str]
 
 
 @dataclass
 class ScrapeResult:
     csv_path: Path
     entries: List[AnimeEntry]
-    used_local: bool  # 互換用（常に False）
-    used_dynamic: bool  # 動的取得を使用した場合 True
+    used_local: bool
+    used_dynamic: bool
     run_log_path: Path
     logs: List[str]
+    structure_warning: str | None = None
 
 
 def slugify(text: str) -> str:
@@ -76,11 +72,6 @@ def slugify(text: str) -> str:
 
 
 def fetch_live_html(timeout: float = 15.0) -> tuple[str | None, str | None]:
-    """ライブページを取得し (html, error_message) を返す。
-
-    失敗時は (None, エラーメッセージ)。成功しても構造が期待と違う場合は html は返しつつ
-    error_message に警告文字列を入れる。
-    """
     try:
         resp = requests.get(
             FALL_PAGE_URL,
@@ -108,43 +99,34 @@ def parse_entries(html: str) -> List[AnimeEntry]:
         raise RuntimeError("新作コンテンツ領域(#newContents)が見つかりません")
 
     entries: List[AnimeEntry] = []
-
     week_wrappers = container.select("div.weekWrapper")
     for ww in week_wrappers:
         week_text_el = ww.select_one(".weekText")
         if not week_text_el:
             continue
         week_label = week_text_el.get_text(strip=True)
-        # 例: "月曜配信" -> "月曜"
         weekday = week_label.replace("配信", "")
-        # タブ2(まだまだ配信中)対策: 週見出しが曜日+配信 以外を除外
         if not weekday.endswith("曜"):
             continue
-
         item_wrapper = week_text_el.find_next_sibling(
             "div", class_=re.compile(r"itemWrapper")
         )
         if not item_wrapper:
             continue
-        # プレースホルダ("配信作品はありません")のみの場合スキップ
         if not item_wrapper.select(
             "div.itemModule"
         ) and "配信作品はありません" in item_wrapper.get_text(strip=True):
             continue
         item_modules = item_wrapper.select("div.itemModule.list")
         for idx, module in enumerate(item_modules, start=1):
-            # 放送開始日
             start_el = module.select_one("header .streamingDate")
             start_date = start_el.get_text(strip=True) if start_el else ""
-            # タイトル
             title_el = module.select_one("p.newTVtitle span")
             title = title_el.get_text(strip=True) if title_el else ""
-            # 画像 URL
             img_el: Optional[Tag] = module.select_one(".thumbnailArea img")
             variants: list[str] = []
             image_url = ""
             if img_el:
-                # alt優先、その後 data-src, src の順
                 for attr in ("alt", "data-src", "src"):
                     val = img_el.get(attr)
                     if val and val not in variants:
@@ -168,40 +150,54 @@ def parse_entries(html: str) -> List[AnimeEntry]:
     return entries
 
 
-def download_images(
-    entries: Iterable[AnimeEntry], images_dir: Path, timeout: float = 15.0
-) -> int:
-    """画像をダウンロードし、成功件数を返す。
-
-    各エントリで alt > data-src > src の順に試し、成功した時点で打ち切る。
-    """
-    images_dir.mkdir(parents=True, exist_ok=True)
-    session = requests.Session()
+def _download_one(
+    session: requests.Session, e: AnimeEntry, images_dir: Path, timeout: float
+) -> bool:
+    if not e.variants:
+        return False
+    target = images_dir / e.image_filename
+    if target.exists():
+        return False
     headers = {
         "User-Agent": "Mozilla/5.0",
         "Referer": FALL_PAGE_URL,
         "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
     }
+    for url in e.variants:
+        try:
+            r = session.get(url, timeout=timeout, headers=headers)
+            if r.status_code == 200 and r.content:
+                ext = os.path.splitext(url)[1].split("?")[0]
+                if ext and ext.lower() not in (".php",):
+                    new_target = target.with_suffix(ext)
+                else:
+                    new_target = target
+                new_target.write_bytes(r.content)
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def download_images(
+    entries: Iterable[AnimeEntry],
+    images_dir: Path,
+    timeout: float = 15.0,
+    max_workers: int = 6,
+) -> int:
+    images_dir.mkdir(parents=True, exist_ok=True)
+    session = requests.Session()
     saved = 0
-    for e in entries:
-        if not e.variants:
-            continue
-        target = images_dir / e.image_filename
-        if target.exists():  # 既存なら成功扱いにしない(重複カウント回避)
-            continue
-        for url in e.variants:
+    # 並列数は過度な負荷を避け控えめ
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        futures = {
+            ex.submit(_download_one, session, e, images_dir, timeout): e
+            for e in entries
+        }
+        for fut in as_completed(futures):
             try:
-                r = session.get(url, timeout=timeout, headers=headers)
-                if r.status_code == 200 and r.content:
-                    # 拡張子が異なる可能性があるので差し替え
-                    ext = os.path.splitext(url)[1].split("?")[0]
-                    if ext and ext.lower() not in (".php",):
-                        new_target = target.with_suffix(ext)
-                    else:
-                        new_target = target
-                    new_target.write_bytes(r.content)
+                if fut.result():
                     saved += 1
-                    break
             except Exception:
                 continue
     return saved
@@ -209,13 +205,10 @@ def download_images(
 
 def write_csv(entries: List[AnimeEntry], csv_path: Path) -> None:
     csv_path.parent.mkdir(parents=True, exist_ok=True)
-    # 曜日毎にまとめて並べる
     by_day: dict[str, List[AnimeEntry]] = {}
     for e in entries:
         by_day.setdefault(e.weekday, []).append(e)
-    # 安定した順序: 月火水木金土日 の順 / 見つかったもののみ
     order = ["月曜", "火曜", "水曜", "木曜", "金曜", "土曜", "日曜"]
-    # Excel で日本語カラム/文字化けを避けるため BOM 付き UTF-8 (utf-8-sig)
     with csv_path.open("w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
         w.writerow(["曜日", "放送開始日", "タイトル", "画像URL", "画像ファイル名"])
@@ -249,22 +242,16 @@ async def _fetch_dynamic_html(timeout_sec: int = 15) -> str:
 
 
 def run_scrape(dynamic: bool = False) -> ScrapeResult:
-    """ライブページをスクレイピング。
-
-    Parameters
-    ----------
-    dynamic: bool, default False
-        True の場合、静的(単純 HTTP)パース結果が 0 件だったとき Playwright を用いた
-        動的 DOM 取得を 1 回試みる。GUI では自動的に静的 0 件時に再試行するため、
-        CLI で明示的に挙動を確認したい場合のみ --dynamic を指定する。
-    """
     used_local = False
     used_dynamic = False
     logs: List[str] = []
+    structure_warning: str | None = None
 
-    def _log(msg: str):  # 内部ロガー
+    def _log(msg: str, level: int = logging.INFO):
         ts = dt.datetime.now().strftime("%H:%M:%S")
-        logs.append(f"[{ts}] {msg}")
+        line = f"[{ts}] {msg}"
+        logs.append(line)
+        LOGGER.log(level, msg)
 
     _log(f"run_scrape start mode={'dynamic' if dynamic else 'static'}")
     live_html, live_err = fetch_live_html()
@@ -276,12 +263,21 @@ def run_scrape(dynamic: bool = False) -> ScrapeResult:
             pass
         parse_html = live_html
     else:
-        _log(f"live fetch failed: {live_err}")
+        _log(f"live fetch failed: {live_err}", logging.ERROR)
         raise LoginRequiredError(f"ライブページ取得失敗: {live_err}")
 
-    entries: List[AnimeEntry] = []
-    entries = parse_entries(parse_html)
+    entries: List[AnimeEntry] = parse_entries(parse_html)
     _log(f"parsed entries={len(entries)} (static)")
+
+    if not entries:
+        # 構造変化簡易検出: weekWrapper が存在するのに itemModule が 0 など
+        if "weekWrapper" in live_html and "itemModule" not in live_html:
+            structure_warning = "構造変化の可能性 (weekWrapper あるが itemModule 無)"
+        elif "weekText" not in live_html:
+            structure_warning = "weekText 不在 (ログイン/構造変化)"
+        if structure_warning:
+            _log(structure_warning, logging.WARNING)
+
     if dynamic and len(entries) == 0:
         _log("static 0 -> dynamic 再取得開始")
         try:
@@ -299,20 +295,16 @@ def run_scrape(dynamic: bool = False) -> ScrapeResult:
                 except Exception:
                     pass
         except Exception as e:
-            _log(f"dynamic fetch failed: {e}")
-
-    # 3. 空ならフォールバック
-    # フォールバック廃止: entries が 0 の場合でもそのまま出力
+            _log(f"dynamic fetch failed: {e}", logging.WARNING)
 
     today = dt.datetime.now().strftime("%Y%m%d")
-    base_out = Path(__file__).parent / OUT_DIR_NAME / today
+    base_out = Path(__file__).resolve().parent.parent / OUT_DIR_NAME / today
     images_dir = base_out / "images"
     csv_path = base_out / "anime_list.csv"
     saved = download_images(entries, images_dir)
     _log(f"download images saved={saved}")
     write_csv(entries, csv_path)
     _log("csv written")
-    # ステータス行を簡易的に追記 (再実行確認しやすいように)
     status_path = base_out / "_status.txt"
     status_lines = [
         f"entries={len(entries)}",
@@ -323,9 +315,10 @@ def run_scrape(dynamic: bool = False) -> ScrapeResult:
         status_lines.append(f"live_warn={live_err}")
     if used_dynamic:
         status_lines.append("used_dynamic=1")
+    if structure_warning:
+        status_lines.append(f"structure_warning={structure_warning}")
     status_path.write_text(" ".join(status_lines) + "\n", encoding="utf-8")
-    # run.log へ書き出し
-    run_log_path = base_out / "run.log"  # ログも Excel で開きやすいよう BOM 付き
+    run_log_path = base_out / "run.log"
     try:
         run_log_path.write_text("\n".join(logs) + "\n", encoding="utf-8-sig")
     except Exception:
@@ -337,10 +330,11 @@ def run_scrape(dynamic: bool = False) -> ScrapeResult:
         used_dynamic=used_dynamic,
         run_log_path=run_log_path,
         logs=logs,
+        structure_warning=structure_warning,
     )
 
 
-def _cli():  # 簡易CLI (開発/デバッグ用)
+def _cli():
     import argparse
 
     parser = argparse.ArgumentParser(
@@ -358,6 +352,7 @@ def _cli():  # 簡易CLI (開発/デバッグ用)
     )
     args = parser.parse_args()
 
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     try:
         if args.version:
             print(__version__)
@@ -368,6 +363,8 @@ def _cli():  # 簡易CLI (開発/デバッグ用)
         )
         if result.used_dynamic:
             print("(dynamic fetch used)")
+        if result.structure_warning:
+            print(f"[WARN] {result.structure_warning}")
         print(f"run.log: {result.run_log_path}")
     except LoginRequiredError as e:
         print(f"ログインが必要かもしれません: {e}", file=sys.stderr)
@@ -377,5 +374,5 @@ def _cli():  # 簡易CLI (開発/デバッグ用)
         sys.exit(1)
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     _cli()

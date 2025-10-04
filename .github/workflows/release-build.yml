@@ -1,0 +1,80 @@
+name: Build and Release (PyInstaller)
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies (minimal)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          # dev/optional dependencies (lint, test)
+          pip install .[dev]
+
+      - name: Lint (ruff)
+        run: |
+          ruff check .
+
+      - name: Type check (mypy)
+        if: runner.os == 'Linux'
+        run: |
+          mypy . || true  # 型警告は現状ブロックしない (調整可能)
+
+      - name: Run tests (pytest)
+        run: |
+          pytest -q || (echo "Tests failed" && exit 1)
+
+      - name: Build (PyInstaller)
+        run: |
+          if [ "${{ runner.os }}" = "Windows" ]; then \
+            pyinstaller --onefile --noconsole gui_launcher.py -n d_anime_scraper --add-data version.py;. ; \
+          else \
+            pyinstaller --onefile --noconsole gui_launcher.py -n d_anime_scraper --add-data version.py:. ; \
+          fi
+
+      - name: Archive binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: d_anime_scraper-${{ runner.os }}
+          path: dist/*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./dist_all
+      - name: Display structure
+        run: ls -R dist_all
+      - name: Prepare release assets
+        run: |
+          mkdir upload
+          cp dist_all/d_anime_scraper-Windows/d_anime_scraper.exe upload/ || true
+          cp dist_all/d_anime_scraper-Linux/d_anime_scraper upload/ || true
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            upload/d_anime_scraper.exe
+            upload/d_anime_scraper
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

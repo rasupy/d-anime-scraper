@@ -13,8 +13,8 @@ import time
 import tkinter as tk
 from tkinter import messagebox
 
-from scraper import LoginRequiredError, run_scrape, ScrapeResult
-from version import __version__
+from d_anime_scraper.scraper import LoginRequiredError, run_scrape, ScrapeResult
+from d_anime_scraper.version import __version__
 
 
 class LogWindow:
@@ -76,6 +76,8 @@ def main():
                 tail = result.logs[-5:]
                 for line in tail:
                     win.log(f"[LOG] {line}")
+            if result.structure_warning:
+                win.log(f"[WARN] {result.structure_warning}")
             if not result.entries:
                 win.log("[INFO] 静的取得で 0 件 → 動的取得(dyanmic)を試行します")
                 try:
