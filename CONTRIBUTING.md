@@ -22,6 +22,8 @@ pytest
 ruff check .
 ruff format .  # (optional)
 mypy .
+
+Ruff の設定は `pyproject.toml` 内 `[tool.ruff]` / `[tool.ruff.lint]` に統合されています。
 ```
 
 ## Versioning

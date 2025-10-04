@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "d-anime-scraper"
-version = "0.6.5"  # Single-source in d_anime_scraper/version.py (keep in sync manually or add automation)
+version = "0.6.7"  # Single-source in d_anime_scraper/version.py (keep in sync manually or add automation)
 description = "dアニメストア 今期アニメ一覧 スクレイピングツール"
 readme = "README.md"
 authors = [
@@ -50,10 +50,10 @@ testpaths = ["tests"]
 line-length = 100
 
 [tool.ruff.lint]
-# 追加で明示したいルールセットがあればここに select/ignore を配置可能
-# 現時点ではデフォルト + import order, pyupgrade など Ruff の標準を利用
-select = ["E", "F", "I", "UP", "SIM"]
-ignore = []
+# Ruff 設定は本ファイルに集約 (旧 ruff.toml は削除予定)
+# 適用ルール: エラー/フォーマット(E/F), import(I), bugbear(B), pyupgrade(UP), simplification(SIM), pep8-naming(N)
+select = ["E", "F", "I", "B", "UP", "SIM", "N"]
+ignore = ["E501"]  # 行長は独自基準 (100) で管理し折り返し強制しない
 
 [tool.mypy]
 python_version = "3.12"
