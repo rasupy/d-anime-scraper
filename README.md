@@ -1,171 +1,62 @@
-### バージョン
+# d-anime-scraper
 
-現在のバージョンは `d_anime_scraper/version.py` を参照してください (タグ: vX.Y.Z)。
+d-アニメストアの今期の作品一覧から作品情報を取得し、
+曜日ごとにまとめた CSV とサムネイル画像を保存します。
 
-## d アニメストア 今期アニメ一覧 スクレイピングツール
+## できること
 
-ブラウザで d アニメストアにログイン済みの状態で実行すると、今期放送予定ページ ("今期(秋)アニメ") から作品一覧を取得し、日付フォルダに **CSV + 画像** を保存します。GUI 版は「ダブルクリック → 待つ → 出力フォルダが自動で開く → 数秒後ウィンドウ自動終了」というワンステップ利用を想定しています。
+- 作品一覧取得
+- CSV 出力 (放送日 / タイトル / 画像 URL)
+- タイトル画像を `OUT/＜日付＞/image/` に保存
+- Docker でワンコマンド実行
 
----
-
-### ✅ 特徴 (ユーザー向け)
-
-- CSV 出力 (BOM 付 UTF-8): 曜日 / 放送開始日 / タイトル / 画像 URL / 画像ファイル名
-- 画像自動保存 (候補: `alt` → `data-src` → `src` の順で最初の有効 URL 採用)
-- 日付ごとフォルダ: `OUT/YYYYMMDD/`
-- 最新 HTML を `_live.html` に保存 (不具合調査用)
-- ログ & ステータス: `run.log`, `_status.txt` で取得件数や動的判定・警告確認
-- 静的 0 件時のみ Playwright (動的) 再取得をオプション実行
-- 完了後に出力フォルダを OS のファイルマネージャで自動オープン
-
-### 📦 構成 (主要)
-
-| パス                             | 役割                                        |
-| -------------------------------- | ------------------------------------------- |
-| `gui_launcher.py`                | GUI ランチャ (exe 化対象)                   |
-| `d_anime_scraper/`               | コアパッケージ (`scraper.py`, `version.py`) |
-| `pyproject.toml`                 | パッケージ / CLI エントリ / ツール設定      |
-| `requirements.txt`               | 最小依存 (静的スクレイピング)               |
-| `build_exe.sh` / `build_exe.bat` | PyInstaller ビルドスクリプト                |
-| `.github/workflows/`             | リリース自動ビルド CI                       |
-
-旧ルート `scraper.py`, `version.py` は互換用スタブになっている場合があります。公式 API は `d_anime_scraper` パッケージ配下を参照してください。
-
----
-
-## 🔰 クイックスタート (配布バイナリ)
-
-1. ブラウザで d アニメストアにログインし対象ページが見られることを確認
-2. ダウンロードした `d_anime_scraper` (Windows: `d_anime_scraper.exe`) をダブルクリック
-3. ログ表示 → 完了後フォルダ自動オープン (`OUT/YYYYMMDD/`)
-4. 数秒後ウィンドウ自動終了
-
-再実行で既存画像はスキップされ、新規のみ追加保存されます。
-
----
-
-## 🐍 ソース実行 (Python)
+## 最速利用手順 (Docker)
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
+git clone <url>
+cd d-anime-scraper
+cp .env.example .env   # 任意
+docker compose build
+docker compose up --remove-orphans
+```
+
+出力: `OUT/YYYYMMDD/anime_list.csv` と `image/` ディレクトリ
+
+## CSV 例
+
+```
+月曜,,
+放送日,タイトル,画像URL
+10月6日～,作品タイトルA,https://.../A.png
+
+火曜,,
+放送日,タイトル,画像URL
+ ,放送日未確定タイトル,https://.../B.png
+```
+
+※ 放送日が空欄の作品は初回日が API/追加データで未取得または未定。
+
+## 環境変数 (必要なら `.env` に設定)
+
+| 変数     | 説明                                     | 例   |
+| -------- | ---------------------------------------- | ---- |
+| HOST_UID | ホスト UID を合わせて OUT の権限問題回避 | 1000 |
+| HOST_GID | ホスト GID                               | 1000 |
+| DEBUG    | 1 で `raw.json` などデバッグ出力         | 1    |
+
+## ローカル実行 (任意)
+
+```bash
+python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-python gui_launcher.py      # GUI 利用 (推奨)
+python app/scraper.py
 ```
 
-### CLI 利用
+## 注意
 
-```bash
-pip install .
-d-anime-scraper            # 静的取得
-d-anime-scraper --version  # バージョン表示
-```
+- 利用規約を守り一括取得のみを想定 (大量・高頻度アクセスはしない)
+- API / サイト構造変更で動かなくなる可能性があります
 
-### (任意) 動的再取得を試す
+## ライセンス / 更新履歴
 
-```bash
-pip install .[dynamic]
-playwright install chromium
-d-anime-scraper --dynamic
-```
-
-GUI は静的 0 件時に自動で 1 回 Playwright を試行します。
-
----
-
-## 📂 出力例
-
-```
-OUT/20251004/
-  anime_list.csv      # UTF-8 (BOM)
-  images/             # 作品画像
-  _status.txt         # entries / saved_images / used_dynamic / structure_warning
-  run.log             # 実行ログ (BOM 付)
-_live.html            # 最新ページ HTML
-```
-
-### 出力先ディレクトリの決定ルール
-
-優先順位:
-
-1. 環境変数 `D_ANIME_SCRAPER_OUT_DIR` が設定されていればそのパス
-2. PyInstaller onefile 版: 実行した exe があるフォルダ直下
-3. ソース実行: プロジェクトルート直下
-
-その下に `OUT/<YYYYMMDD>/` が生成されます。CLI で `--out-dir /path/to/base` を指定すれば (1) と同様に上書き可能です。
-
-例:
-
-```bash
-d-anime-scraper --out-dir "D:/data/danime"
-```
-
-→ `D:/data/danime/OUT/20251004/anime_list.csv` などが生成。
-
-CSV カラム: `曜日, 放送開始日, タイトル, 画像URL, 画像ファイル名`
-
----
-
-## ⚠️ structure_warning
-
-静的 HTML に `weekWrapper` があるのに `itemModule` が無い / 想定シグネチャ欠落時など DOM 構造変化を示唆する警告。表示された場合は `d_anime_scraper/scraper.py` の `parse_entries` セレクタ調整を検討してください。
-
----
-
-## ❓ FAQ
-
-| 質問                   | 回答                                                                                        |
-| ---------------------- | ------------------------------------------------------------------------------------------- |
-| 0 件になる             | JS 後挿入の可能性。`pip install .[dynamic]` → `playwright install chromium` → `--dynamic`。 |
-| 画像が一部無い         | 一時的エラー。再実行で補完されるケースあり。                                                |
-| Excel 文字化け         | BOM 付き UTF-8。改善しない場合は「データの取得」で UTF-8 指定。                             |
-| Playwright は必須?     | いいえ。静的で取得できていれば不要。0 件時のみ導入。                                        |
-| フォルダ自動で開かない | Linux で `xdg-open` 無い等。手動で `OUT` を参照。                                           |
-| 再実行時の画像重複     | 既存ファイルはスキップし新規のみ保存。                                                      |
-
----
-
-## 🛠 開発者向け
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -e .[dev]
-pytest
-ruff check .
-mypy .
-```
-
-### PyInstaller ビルド
-
-```bash
-pip install pyinstaller
-bash build_exe.sh        # Linux / macOS
-build_exe.bat            # Windows
-```
-
-生成物: `dist/d_anime_scraper` (Windows: `.exe`)
-
-### バージョン
-
-`d_anime_scraper/version.py` と `pyproject.toml` を更新 → `git tag vX.Y.Z` → push で CI がリリース作成。
-
-### Editable
-
-`pip install -e .` が生成する `*.egg-info/` はコミット不要。
-
----
-
-## 🔒 注意 / 免責
-
-- サイト規約・robots.txt を遵守
-- 画像は著作権対象。適切な範囲で利用
-- 本ツールは "AS IS" 提供。自己責任で利用
-
----
-
-## 📬 フィードバック
-
-Issue / PR 歓迎。`_status.txt` や `run.log` の抜粋を添付すると解析が早くなります。
-
-Enjoy scraping!
+ライセンス: `LICENSE` を参照。詳細な変更点は `CHANGELOG.md` または `リリースノート.txt` を参照してください。

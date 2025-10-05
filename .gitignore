@@ -1,5 +1,6 @@
 ## Python キャッシュ/環境
 __pycache__/
+*.py[cod]
 *.pyc
 .venv/
 .env
@@ -10,7 +11,8 @@ __pycache__/
 coverage.xml
 
 ## 出力成果物 (日付フォルダ)
-OUT/
+OUT/*
+!OUT/.gitkeep
 out/
 
 ## ビルド生成物 / 配布バイナリ
@@ -25,3 +27,10 @@ _live.html
 
 # Packaging metadata
 *.egg-info/
+
+# OS
+.DS_Store
+
+# その他
+要件定義.md
+main.html

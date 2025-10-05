@@ -1,3 +1,2 @@
-requests>=2.31.0
-beautifulsoup4>=4.12.2   # HTML 解析
-lxml>=4.9.3              # 高速化のために利用推奨
+beautifulsoup4==4.12.3
+requests==2.32.3
